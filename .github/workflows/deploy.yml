@@ -61,8 +61,7 @@ jobs:
             --image "$BACKEND_IMAGE" \
             --region ${{ env.REGION }} \
             --allow-unauthenticated \
-            --cpu=2 --memory=2Gi \
-            --set-env-vars=PORT=8080
+            --cpu=2 --memory=2Gi
 
       - name: Deploy frontend to Cloud Run
         run: |

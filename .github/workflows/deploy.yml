@@ -1,0 +1,73 @@
+name: Deploy to Cloud Run
+
+on:
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: ${{ vars.GCP_PROJECT }}
+  REGION: ${{ vars.GCP_REGION }}
+  ARTIFACT_REPO: ${{ vars.ARTIFACT_REPO }}
+  BACKEND_SERVICE: ${{ vars.BACKEND_SERVICE }}
+  FRONTEND_SERVICE: ${{ vars.FRONTEND_SERVICE }}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Configure Artifact Registry auth
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build & push backend image
+        run: |
+          BACKEND_IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.BACKEND_SERVICE }}:${{ github.sha }}
+          docker build -t "$BACKEND_IMAGE" -f server/Dockerfile server
+          docker push "$BACKEND_IMAGE"
+          echo "BACKEND_IMAGE=$BACKEND_IMAGE" >> $GITHUB_ENV
+
+      - name: Build & push frontend image
+        env:
+          VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
+          VITE_API_URL: ${{ secrets.BACKEND_URL }}
+        run: |
+          FRONTEND_IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.FRONTEND_SERVICE }}:${{ github.sha }}
+          docker build \
+            --build-arg VITE_GEMINI_API_KEY \
+            --build-arg VITE_API_URL \
+            -t "$FRONTEND_IMAGE" .
+          docker push "$FRONTEND_IMAGE"
+          echo "FRONTEND_IMAGE=$FRONTEND_IMAGE" >> $GITHUB_ENV
+
+      - name: Deploy backend to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.BACKEND_SERVICE }} \
+            --image "$BACKEND_IMAGE" \
+            --region ${{ env.REGION }} \
+            --allow-unauthenticated \
+            --cpu=2 --memory=2Gi \
+            --set-env-vars=PORT=8080
+
+      - name: Deploy frontend to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.FRONTEND_SERVICE }} \
+            --image "$FRONTEND_IMAGE" \
+            --region ${{ env.REGION }} \
+            --allow-unauthenticated \
+            --cpu=1 --memory=512Mi

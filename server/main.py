@@ -8,17 +8,11 @@ import shutil
 app = FastAPI()
 
 # Configure CORS
-# Support both development and production
-frontend_url = os.getenv("FRONTEND_URL", "")
-if frontend_url:
-    # Production: use the frontend URL from environment
-    origins = [frontend_url]
-else:
-    # Development: allow localhost origins
-    origins = [
-        "http://localhost:3000",
-        "http://localhost:5173", # Vite default
-    ]
+# In production, replace with specific origins
+origins = [
+    "http://localhost:3000",
+    "http://localhost:5173", # Vite default
+]
 
 app.add_middleware(
     CORSMiddleware,

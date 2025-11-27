@@ -5,8 +5,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8080
 WORKDIR /app
 
-# System build tools for docling dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
+# System build tools and runtime libs needed by Docling/OpenCV/RapidOCR
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

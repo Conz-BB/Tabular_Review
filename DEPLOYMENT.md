@@ -21,10 +21,25 @@ This guide will help you deploy Tabular Review to **Render.com** (free tier avai
 
 ### 1.1 Update Backend CORS
 
-The backend CORS is already configured to accept environment variables. Make sure `server/main.py` has the production-ready CORS setup (see below).
+The backend CORS is already configured to accept environment variables. The `server/main.py` file has production-ready CORS setup that reads from the `FRONTEND_URL` environment variable.
 
 ### 1.2 Push to GitHub
 
+**Important:** Make sure you're pushing to YOUR repository, not someone else's.
+
+If you need to change the remote:
+```bash
+# Check current remote
+git remote -v
+
+# If it points to someone else's repo, change it to yours:
+git remote set-url origin https://github.com/YOUR_USERNAME/Tabular_Review.git
+
+# Or create a new repo on GitHub and set it:
+git remote set-url origin https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
+```
+
+Then push:
 ```bash
 git add .
 git commit -m "Prepare for deployment"
@@ -44,10 +59,10 @@ git push origin main
    - **Root Directory**: Leave empty (or set to `server` if you prefer)
 
 5. **Environment Variables**:
-   - No backend-specific env vars needed (CORS will use `FRONTEND_URL`)
+   - No backend-specific env vars needed yet (we'll add `FRONTEND_URL` after frontend is deployed)
 
 6. Click **"Create Web Service"**
-7. Wait for deployment (first deploy takes ~5-10 minutes)
+7. Wait for deployment (first deploy takes ~5-10 minutes due to Docling dependencies)
 8. **Copy the service URL** (e.g., `https://tabular-review-backend.onrender.com`)
 
 ## Step 3: Deploy Frontend (Static Site)
@@ -56,7 +71,7 @@ git push origin main
 2. Connect your GitHub repository
 3. Configure:
    - **Name**: `tabular-review-frontend` (or your choice)
-   - **Build Command**: `cd /opt/render/project/src && pnpm install && pnpm build`
+   - **Build Command**: `pnpm install && pnpm build`
    - **Publish Directory**: `dist`
    - **Root Directory**: Leave empty
 
@@ -71,11 +86,12 @@ git push origin main
 ## Step 4: Update Backend CORS
 
 1. Go back to your backend service in Render
-2. Add environment variable:
+2. Go to **"Environment"** tab
+3. Add environment variable:
    - **Key**: `FRONTEND_URL`
    - **Value**: Your frontend URL from Step 3 (e.g., `https://tabular-review-frontend.onrender.com`)
 
-3. The backend will automatically restart and use the new CORS settings
+4. The backend will automatically restart and use the new CORS settings
 
 ## Step 5: Test Your Deployment
 
@@ -83,28 +99,27 @@ git push origin main
 2. Try uploading a document
 3. Verify extraction works
 
-## Alternative: Railway (If Render Free Tier is Limited)
-
-Railway offers similar free tier with $5 credit monthly:
-
-1. Go to [Railway](https://railway.app)
-2. Deploy backend as a **"New Project"** → **"GitHub Repo"**
-3. Set start command: `cd server && uvicorn main:app --host 0.0.0.0 --port $PORT`
-4. Deploy frontend as a separate service or use Vercel for frontend
-
 ## Troubleshooting
 
 ### Backend CORS Errors
 - Make sure `FRONTEND_URL` environment variable is set in backend
 - Check that the frontend URL matches exactly (including https://)
+- Verify the backend has restarted after adding the environment variable
 
 ### Build Failures
 - Check Render logs for specific errors
 - Ensure all dependencies are in `requirements.txt` and `package.json`
+- For backend: First deployment can take 10+ minutes due to Docling dependencies
 
 ### Slow First Request
 - Render free tier spins down after 15 minutes of inactivity
 - First request after spin-down takes ~30 seconds (this is normal)
+- Backend will wake up automatically on first request
+
+### Frontend Not Connecting to Backend
+- Verify `VITE_API_URL` is set correctly in frontend environment variables
+- Check that the backend URL includes `https://` (not `http://`)
+- Ensure backend service is running (check status in Render dashboard)
 
 ## Cost
 
@@ -120,4 +135,5 @@ Railway offers similar free tier with $5 credit monthly:
 - The free tier has limitations (spin-down, slower cold starts)
 - For production use, consider upgrading to paid tier
 - Always keep your API keys secure (never commit them to git)
-
+- Backend first deployment is slow due to Docling model downloads (~10-15 minutes)
+- Subsequent deployments are faster (~3-5 minutes)

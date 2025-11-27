@@ -1,13 +1,14 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { DataGrid } from './components/DataGrid';
 import { VerificationSidebar } from './components/VerificationSidebar';
-import { ChatInterface } from './components/ChatInterface';
 import { AddColumnMenu } from './components/AddColumnMenu';
+import { ProjectSwitcher } from './components/ProjectSwitcher';
+import { SheetContextModal } from './components/SheetContextModal';
 import { extractColumnData } from './services/geminiService';
 import { processDocumentToMarkdown } from './services/documentProcessor';
+import { projectStorage } from './services/projectStorage';
 import { DocumentFile, Column, ExtractionResult, SidebarMode, ColumnType } from './types';
-import { MessageSquare, Table, Square, FilePlus, LayoutTemplate, ChevronDown, Zap, Cpu, Brain, Trash2, Play, Download, WrapText, Loader2 } from './components/Icons';
-import { SAMPLE_COLUMNS } from './utils/sampleData';
+import { Table, Square, FilePlus, ChevronDown, Zap, Cpu, Brain, Trash2, Play, Download, WrapText, Loader2, Check, LayoutTemplate } from './components/Icons';
 
 // Available Models
 const MODELS = [
@@ -17,6 +18,10 @@ const MODELS = [
 ];
 
 const App: React.FC = () => {
+  // Project Management State
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const isInitialMount = useRef(true);
+
   // State
   const [documents, setDocuments] = useState<DocumentFile[]>([]);
   const [projectName, setProjectName] = useState('Untitled Project');
@@ -37,6 +42,9 @@ const App: React.FC = () => {
   const [selectedModel, setSelectedModel] = useState<string>(MODELS[0].id);
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
 
+  // Export Menu State
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+
   // Add/Edit Column Menu State
   const [addColumnAnchor, setAddColumnAnchor] = useState<DOMRect | null>(null);
   const [editingColumnId, setEditingColumnId] = useState<string | null>(null);
@@ -49,6 +57,118 @@ const App: React.FC = () => {
   
   // Text Wrap State
   const [isTextWrapEnabled, setIsTextWrapEnabled] = useState(false);
+  
+  // Sheet Context State
+  const [sheetContext, setSheetContext] = useState<string>('');
+  const [isSheetContextModalOpen, setIsSheetContextModalOpen] = useState(false);
+
+  // Load a project
+  const loadProject = useCallback((project: { id: string; name: string; columns: Column[]; documents: DocumentFile[]; results: ExtractionResult; selectedModel: string; sheetContext?: string }) => {
+    setCurrentProjectId(project.id);
+    setProjectName(project.name);
+    setColumns(project.columns);
+    setDocuments(project.documents);
+    setResults(project.results);
+    setSelectedModel(project.selectedModel);
+    setSheetContext(project.sheetContext || '');
+    setSidebarMode('none');
+    setSelectedCell(null);
+    setPreviewDocId(null);
+    projectStorage.setCurrentProjectId(project.id);
+    isInitialMount.current = false;
+  }, []);
+
+  // Save current project
+  const saveCurrentProject = useCallback(() => {
+    if (!currentProjectId) return;
+    
+    projectStorage.updateProject(currentProjectId, {
+      name: projectName,
+      columns,
+      documents,
+      results,
+      selectedModel,
+      sheetContext
+    });
+  }, [currentProjectId, projectName, columns, documents, results, selectedModel, sheetContext]);
+
+  // Load project on mount
+  useEffect(() => {
+    const savedProjectId = projectStorage.getCurrentProjectId();
+    if (savedProjectId) {
+      const project = projectStorage.getProject(savedProjectId);
+      if (project) {
+        loadProject(project);
+        return;
+      }
+    }
+    // Create default project if none exists
+    const defaultProject = projectStorage.createProject('Untitled Project', MODELS[0].id);
+    projectStorage.setCurrentProjectId(defaultProject.id);
+    setCurrentProjectId(defaultProject.id);
+    setProjectName(defaultProject.name);
+    setSelectedModel(defaultProject.selectedModel);
+    isInitialMount.current = false;
+  }, [loadProject]);
+
+  // Auto-save project when state changes (but not on initial mount)
+  useEffect(() => {
+    if (isInitialMount.current || !currentProjectId) return;
+    
+    // Debounce auto-save
+    const timeoutId = setTimeout(() => {
+      saveCurrentProject();
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [documents, columns, results, projectName, selectedModel, currentProjectId, saveCurrentProject]);
+
+  // Save project name when editing finishes
+  useEffect(() => {
+    if (!isEditingProjectName && currentProjectId) {
+      saveCurrentProject();
+    }
+  }, [isEditingProjectName, projectName, currentProjectId, saveCurrentProject]);
+
+  // Project Management Handlers
+  const handleProjectSelect = useCallback((projectId: string) => {
+    // Save current project before switching
+    if (currentProjectId) {
+      saveCurrentProject();
+    }
+
+    const project = projectStorage.getProject(projectId);
+    if (project) {
+      loadProject(project);
+    }
+  }, [currentProjectId, saveCurrentProject, loadProject]);
+
+  const handleProjectCreate = useCallback((name: string) => {
+    // Save current project before creating new one
+    if (currentProjectId) {
+      saveCurrentProject();
+    }
+
+    const newProject = projectStorage.createProject(name, selectedModel);
+    projectStorage.setCurrentProjectId(newProject.id);
+    loadProject(newProject);
+  }, [currentProjectId, selectedModel, saveCurrentProject, loadProject]);
+
+  const handleProjectDelete = useCallback((projectId: string) => {
+    projectStorage.deleteProject(projectId);
+    
+    // If deleting current project, create a new one
+    if (projectId === currentProjectId) {
+      const allProjects = projectStorage.getAllProjects();
+      if (allProjects.length > 0) {
+        loadProject(allProjects[0]);
+      } else {
+        const newProject = projectStorage.createProject('Untitled Project', selectedModel);
+        projectStorage.setCurrentProjectId(newProject.id);
+        loadProject(newProject);
+      }
+    }
+  }, [currentProjectId, selectedModel, loadProject]);
 
   // Handlers
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -92,18 +212,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleLoadSample = () => {
-    const sampleCols = SAMPLE_COLUMNS;
-
-    // setDocuments([]); // Keep existing documents
-    setColumns(sampleCols);
-    setResults({}); // Reset results as columns have changed
-    setSidebarMode('none');
-    setProjectName('PE Side Letters Review');
-    setPreviewDocId(null);
-    setSelectedCell(null);
-  };
-
   const handleClearAll = () => {
     // Only confirm if actual analysis work (results) exists.
     // If just documents are loaded, clear immediately for better UX.
@@ -129,6 +237,11 @@ const App: React.FC = () => {
     setProjectName('Untitled Project');
     setAddColumnAnchor(null);
     setEditingColumnId(null);
+
+    // Save cleared state
+    if (currentProjectId) {
+      saveCurrentProject();
+    }
 
     // Reset file input
     if (fileInputRef.current) {
@@ -226,13 +339,12 @@ const App: React.FC = () => {
     processExtraction(documents, columns);
   };
 
-  const handleExportCSV = () => {
-    if (documents.length === 0) return;
-
+  // Helper function to generate CSV content
+  const generateCSVContent = () => {
     // Headers
     const headerRow = ['Document Name', ...columns.map(c => c.name)];
     
-    // Rows
+    // Rows (empty if no documents, just columns/headers will be exported)
     const rows = documents.map(doc => {
       const rowData = [doc.name];
       columns.forEach(col => {
@@ -244,7 +356,18 @@ const App: React.FC = () => {
       return rowData.join(",");
     });
 
-    const csvContent = [headerRow.join(","), ...rows].join("\n");
+    // If no documents, just return headers
+    if (documents.length === 0) {
+      return headerRow.join(",");
+    }
+
+    return [headerRow.join(","), ...rows].join("\n");
+  };
+
+  const handleExportCSV = () => {
+    setIsExportMenuOpen(false);
+
+    const csvContent = generateCSVContent();
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
@@ -254,6 +377,30 @@ const App: React.FC = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleExportGoogleSheets = () => {
+    setIsExportMenuOpen(false);
+
+    const csvContent = generateCSVContent();
+    
+    // Create CSV file and download it
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${projectName.replace(/\s+/g, '_').toLowerCase()}_export.csv`;
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // Clean up the URL
+    setTimeout(() => URL.revokeObjectURL(url), 100);
+    
+    // Open Google Sheets in a new tab
+    // User can then import the downloaded CSV file
+    window.open('https://docs.google.com/spreadsheets/create', '_blank');
   };
 
   const processExtraction = async (docsToProcess: DocumentFile[], colsToProcess: Column[]) => {
@@ -288,7 +435,7 @@ const App: React.FC = () => {
       const promises = tasks.map(async ({ doc, col }) => {
           if (controller.signal.aborted) return;
           try {
-              const data = await extractColumnData(doc, col, selectedModel);
+              const data = await extractColumnData(doc, col, selectedModel, sheetContext);
               if (controller.signal.aborted) return;
 
               setResults(prev => ({
@@ -355,16 +502,6 @@ const App: React.FC = () => {
     }));
   };
 
-  const toggleChat = () => {
-    if (sidebarMode === 'chat') {
-      setSidebarMode('none');
-    } else {
-      setSidebarMode('chat');
-      setSelectedCell(null);
-      setPreviewDocId(null);
-      setIsSidebarExpanded(false); // Chat usually is standard width
-    }
-  };
 
   // Render Helpers
   const getSidebarData = () => {
@@ -394,9 +531,6 @@ const App: React.FC = () => {
   const getSidebarWidthClass = () => {
       if (sidebarMode === 'none') return 'w-0 translate-x-10 opacity-0 overflow-hidden';
       
-      // Chat is fixed width
-      if (sidebarMode === 'chat') return 'w-[400px] translate-x-0';
-      
       // Verify Mode depends on expansion
       if (isSidebarExpanded) return 'w-[900px] translate-x-0'; // Wide Inspector
       return 'w-[400px] translate-x-0'; // Narrow Analyst
@@ -419,7 +553,16 @@ const App: React.FC = () => {
         {/* Header */}
         <header className="relative z-50 bg-white border-b border-slate-200 h-16 flex items-center justify-between px-6 shadow-sm">
           <div className="flex items-center gap-4 min-w-0">
-            <h1 className="text-lg font-bold text-slate-800 tracking-tight whitespace-nowrap">Tabular Review</h1>
+            <h1 className="text-lg font-bold text-slate-800 tracking-tight whitespace-nowrap"> Blackbird - Tabular Review</h1>
+            <div className="h-4 w-px bg-slate-300 mx-2 flex-shrink-0"></div>
+            {/* Project Switcher */}
+            <ProjectSwitcher
+              currentProjectId={currentProjectId}
+              currentProjectName={projectName}
+              onProjectSelect={handleProjectSelect}
+              onProjectCreate={handleProjectCreate}
+              onProjectDelete={handleProjectDelete}
+            />
             <div className="h-4 w-px bg-slate-300 mx-2 flex-shrink-0"></div>
             {isEditingProjectName ? (
               <input
@@ -444,20 +587,6 @@ const App: React.FC = () => {
             )}
           </div>
           <div className="flex items-center gap-3 flex-shrink-0">
-             {/* Chat Button */}
-             <button 
-                onClick={toggleChat}
-                className={`flex items-center gap-2 px-3 py-1.5 border border-slate-200 text-xs font-semibold rounded-md transition-all active:scale-95 ${
-                  sidebarMode === 'chat' 
-                  ? 'bg-indigo-50 text-indigo-600 border-indigo-200' 
-                  : 'bg-white hover:bg-slate-50 text-slate-600'
-                }`}
-                title="AI Analyst"
-             >
-                <MessageSquare className="w-3.5 h-3.5" />
-                Chat
-             </button>
-
              {/* Clear Button */}
              <button 
                 onClick={handleClearAll}
@@ -468,25 +597,40 @@ const App: React.FC = () => {
                 Clear
              </button>
 
-             {/* Load Sample Button */}
-             <button 
-                onClick={handleLoadSample}
-                className="flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 text-xs font-semibold rounded-md transition-all active:scale-95"
-                title="Load Sample Columns"
-             >
-                <LayoutTemplate className="w-3.5 h-3.5" />
-                Load Sample
-             </button>
-
-             {/* Export Button */}
-             <button 
-                onClick={handleExportCSV}
-                className="flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 text-xs font-semibold rounded-md transition-all active:scale-95"
-                title="Export to CSV"
-             >
-                <Download className="w-3.5 h-3.5" />
-                Export
-             </button>
+             {/* Export Dropdown */}
+             <div className="relative">
+                <button 
+                  onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 text-xs font-semibold rounded-md transition-all active:scale-95"
+                  title="Export Data"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Export
+                  <ChevronDown className="w-3 h-3 opacity-60" />
+                </button>
+                
+                {isExportMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setIsExportMenuOpen(false)}></div>
+                    <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 p-1 z-50 animate-in fade-in zoom-in-95 duration-100">
+                      <button
+                        onClick={handleExportCSV}
+                        className="w-full text-left px-3 py-2 rounded-lg flex items-center gap-3 transition-colors hover:bg-slate-50 text-slate-700"
+                      >
+                        <Download className="w-4 h-4 text-slate-500" />
+                        <span className="text-xs font-medium">Export as CSV</span>
+                      </button>
+                      <button
+                        onClick={handleExportGoogleSheets}
+                        className="w-full text-left px-3 py-2 rounded-lg flex items-center gap-3 transition-colors hover:bg-slate-50 text-slate-700"
+                      >
+                        <Table className="w-4 h-4 text-slate-500" />
+                        <span className="text-xs font-medium">Export to Google Sheets</span>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
              
              {/* Text Wrap Button */}
              <button 
@@ -500,6 +644,20 @@ const App: React.FC = () => {
              >
                 <WrapText className={`w-3.5 h-3.5`} />
                 Wrap
+             </button>
+
+             {/* Sheet Context Button */}
+             <button 
+                onClick={() => setIsSheetContextModalOpen(true)}
+                className={`flex items-center gap-2 px-3 py-1.5 border border-slate-200 text-xs font-semibold rounded-md transition-all active:scale-95 ${
+                  sheetContext 
+                  ? 'bg-indigo-50 text-indigo-600 border-indigo-200' 
+                  : 'bg-white hover:bg-slate-50 text-slate-600'
+                }`}
+                title="Edit Sheet Context"
+             >
+                <LayoutTemplate className={`w-3.5 h-3.5`} />
+                Sheet Context
              </button>
 
              {/* Add Document Button */}
@@ -636,6 +794,21 @@ const App: React.FC = () => {
             />
           )}
 
+          {/* Sheet Context Modal */}
+          <SheetContextModal
+            isOpen={isSheetContextModalOpen}
+            onClose={() => setIsSheetContextModalOpen(false)}
+            onSave={(context) => {
+              setSheetContext(context);
+              if (currentProjectId) {
+                projectStorage.updateProject(currentProjectId, {
+                  sheetContext: context
+                });
+              }
+            }}
+            initialContext={sheetContext}
+          />
+
           {/* Right Sidebar Container (Animated Width) */}
           <div 
             className={`transition-all duration-300 ease-in-out border-l border-slate-200 bg-white shadow-xl z-30 relative ${getSidebarWidthClass()}`}
@@ -650,15 +823,6 @@ const App: React.FC = () => {
                         onVerify={handleVerifyCell}
                         isExpanded={isSidebarExpanded}
                         onExpand={setIsSidebarExpanded}
-                    />
-                )}
-                {sidebarMode === 'chat' && (
-                    <ChatInterface 
-                        documents={documents}
-                        columns={columns}
-                        results={results}
-                        onClose={() => setSidebarMode('none')}
-                        modelId={selectedModel}
                     />
                 )}
             </div>

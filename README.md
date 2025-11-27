@@ -63,6 +63,18 @@ Start the frontend (in another terminal):
 pnpm dev
 ```
 
+## 🚀 Deployment
+
+For deployment instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md).
+
+**Quick Deploy to Render.com (Free Tier)**:
+1. Push your code to GitHub
+2. Deploy backend as a Web Service on Render
+3. Deploy frontend as a Static Site on Render
+4. Set environment variables (see DEPLOYMENT.md for details)
+
+The free tier is perfect for demos and personal projects. For production use, consider upgrading to the paid tier for always-on services.
+
 ## 🛡 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

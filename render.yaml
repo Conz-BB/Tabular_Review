@@ -1,0 +1,27 @@
+# Render.com deployment configuration
+# This file helps automate deployment setup
+
+services:
+  # Backend Service (FastAPI)
+  - type: web
+    name: tabular-review-backend
+    env: python
+    buildCommand: pip install -r server/requirements.txt
+    startCommand: cd server && uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: FRONTEND_URL
+        sync: false  # Set this manually after frontend is deployed
+    healthCheckPath: /docs  # FastAPI auto-generates this
+
+  # Frontend Service (Static Site)
+  - type: web
+    name: tabular-review-frontend
+    env: static
+    buildCommand: pnpm install && pnpm build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_GEMINI_API_KEY
+        sync: false  # Set this manually with your API key
+      - key: VITE_API_URL
+        sync: false  # Set this to your backend URL after backend is deployed
+

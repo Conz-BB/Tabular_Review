@@ -74,7 +74,8 @@ const extractionSchema: Schema = {
 export const extractColumnData = async (
   doc: DocumentFile,
   column: Column,
-  modelId: string
+  modelId: string,
+  sheetContext?: string
 ): Promise<ExtractionCell> => {
   return withRetry(async () => {
     try {
@@ -93,6 +94,13 @@ export const extractColumnData = async (
       parts.push({
         text: `DOCUMENT CONTENT:\n${docText}`,
       });
+
+      // Add sheet context if provided (applies to all extractions)
+      if (sheetContext) {
+        parts.push({
+          text: `SHEET CONTEXT (applies to all extractions):\n${sheetContext}\n`
+        });
+      }
   
       // Format instruction based on column type
       let formatInstruction = "";

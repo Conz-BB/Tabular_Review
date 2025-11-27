@@ -11,7 +11,8 @@ app = FastAPI()
 # In production, replace with specific origins
 origins = [
     "http://localhost:3000",
-    "http://localhost:5173", # Vite default
+    "http://localhost:5173",  # Vite default
+    "https://tabular-review-web-538013244458.australia-southeast1.run.app",
 ]
 
 app.add_middleware(
